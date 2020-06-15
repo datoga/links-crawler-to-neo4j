@@ -9,22 +9,65 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
-var visited = make(map[string]bool)
+type link struct {
+	source string
+	target string
+}
 
-func crawl(uri string) {
+type retriever struct {
+	events  map[string][]chan link
+	visited map[string]bool
+}
 
-	links, _ := retrieve(uri)
+func (b *retriever) addEvent(e string, ch chan link) {
+	if b.events == nil {
+		b.events = make(map[string][]chan link)
+	}
+	if _, ok := b.events[e]; ok {
+		b.events[e] = append(b.events[e], ch)
+	} else {
+		b.events[e] = []chan link{ch}
+	}
+}
 
-	for _, l := range links {
-		if !visited[l] {
-			fmt.Println("Fetching", l)
-			visited[uri] = true
-			crawl(l)
+func (b *retriever) removeEvent(e string, ch chan link) {
+	if _, ok := b.events[e]; ok {
+		for i := range b.events[e] {
+			if b.events[e][i] == ch {
+				b.events[e] = append(b.events[e][:i], b.events[e][i+1:]...)
+				break
+			}
 		}
 	}
 }
 
-func retrieve(uri string) ([]string, error) {
+func (b *retriever) emit(e string, response link) {
+	if _, ok := b.events[e]; ok {
+		for _, handler := range b.events[e] {
+			go func(handler chan link) {
+				handler <- response
+			}(handler)
+		}
+	}
+}
+
+func (b *retriever) crawl(uri string) {
+
+	links, _ := b.retrieve(uri)
+
+	for _, l := range links {
+		if !b.visited[l] {
+			b.emit("newLink", link{
+				source: uri,
+				target: l,
+			})
+			b.visited[uri] = true
+			b.crawl(l)
+		}
+	}
+}
+
+func (b *retriever) retrieve(uri string) ([]string, error) {
 	resp, err := http.Get(uri)
 	if err != nil {
 		fmt.Println("Error:", err)

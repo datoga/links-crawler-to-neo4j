@@ -13,6 +13,17 @@ func main() {
 	}
 
 	url := os.Args[1]
+	ev := make(chan link)
+	r := retriever{visited: make(map[string]bool)}
+	r.addEvent("newLink", ev)
 
-	crawl(url)
+	go func() {
+		for {
+			l := <-ev
+			fmt.Println(l.source + " -> " + l.target)
+		}
+	}()
+
+	r.crawl(url)
+
 }

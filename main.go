@@ -2,28 +2,17 @@ package main
 
 import (
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 )
 
-type responseWriter struct{}
-
 func main() {
 
-	resp, err := http.Get("http://www.sfeir.com")
-
-	if err != nil {
-		fmt.Println("Error:", err)
+	if len(os.Args) < 2 {
+		fmt.Println("Web site url is missing")
 		os.Exit(1)
 	}
 
-	rw := responseWriter{}
-	io.Copy(rw, resp.Body)
-}
+	url := os.Args[1]
 
-func (responseWriter) Write(bs []byte) (int, error) {
-	fmt.Printf(string(bs))
-
-	return len(bs), nil
+	retreive(url)
 }

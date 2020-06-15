@@ -9,6 +9,21 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
+var visited = make(map[string]bool)
+
+func crawl(uri string) {
+
+	links, _ := retrieve(uri)
+
+	for _, l := range links {
+		if !visited[l] {
+			fmt.Println("Fetching", l)
+			visited[uri] = true
+			crawl(l)
+		}
+	}
+}
+
 func retrieve(uri string) ([]string, error) {
 	resp, err := http.Get(uri)
 	if err != nil {

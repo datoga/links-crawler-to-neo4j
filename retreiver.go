@@ -2,125 +2,89 @@ package main
 
 import (
 	"fmt"
-	"net/http"
-	"net/url"
-	"strings"
 
-	"github.com/PuerkitoBio/goquery"
+	"github.com/gocolly/colly/v2"
 )
 
-type link struct {
+type Link struct {
 	source string
 	target string
 }
 
-type retriever struct {
-	events  map[string][]chan link
-	visited map[string]bool
+type Retriever struct {
+	Links chan Link
+	depth int
+	async bool
 }
 
-func (b *retriever) addEvent(e string, ch chan link) {
-	if b.events == nil {
-		b.events = make(map[string][]chan link)
-	}
-	if _, ok := b.events[e]; ok {
-		b.events[e] = append(b.events[e], ch)
-	} else {
-		b.events[e] = []chan link{ch}
-	}
-}
+func NewRetriever(depth int, async bool) *Retriever {
+	chLinks := make(chan Link)
 
-func (b *retriever) removeEvent(e string, ch chan link) {
-	if _, ok := b.events[e]; ok {
-		for i := range b.events[e] {
-			if b.events[e][i] == ch {
-				b.events[e] = append(b.events[e][:i], b.events[e][i+1:]...)
-				break
-			}
-		}
+	return &Retriever{
+		Links: chLinks,
+		depth: depth,
+		async: async,
 	}
 }
 
-func (b *retriever) emit(e string, response link) {
-	if _, ok := b.events[e]; ok {
-		for _, handler := range b.events[e] {
-			go func(handler chan link) {
-				handler <- response
-			}(handler)
-		}
-	}
+func (b Retriever) emit(link Link) {
+	b.Links <- link
 }
 
-func (b *retriever) crawl(uri string) {
-
-	links, _ := b.retrieve(uri)
-
-	for _, l := range links {
-		if !b.visited[l] {
-			b.emit("newLink", link{
-				source: uri,
-				target: l,
-			})
-			b.visited[uri] = true
-			b.crawl(l)
-		}
-	}
+func (b *Retriever) finish() {
+	close(b.Links)
 }
 
-func (b *retriever) retrieve(uri string) ([]string, error) {
-	resp, err := http.Get(uri)
-	if err != nil {
-		fmt.Println("Error:", err)
-		return nil, err
-	}
+func (b Retriever) Crawl(uri string) {
 
-	doc, readerErr := goquery.NewDocumentFromReader(resp.Body)
-	if readerErr != nil {
-		fmt.Println("Error:", readerErr)
-		return nil, readerErr
-	}
-	u, parseErr := url.Parse(uri)
-	if parseErr != nil {
-		fmt.Println("Error:", parseErr)
-		return nil, parseErr
-	}
-	host := u.Host
+	fmt.Println("Configuring collector")
+	fmt.Println("---------------------")
+	fmt.Println("Max depth:", b.depth)
+	fmt.Println("Async:", b.async)
+	fmt.Println("---------------------")
 
-	links := []string{}
-	doc.Find("a[href]").Each(func(index int, item *goquery.Selection) {
-		href, _ := item.Attr("href")
-		lu, err := url.Parse(href)
-		if err != nil {
-			fmt.Println("Error:", err)
+	c := colly.NewCollector(
+		colly.MaxDepth(b.depth),
+	)
+
+	c.Async = b.async
+
+	// Find and visit all links
+	c.OnHTML("a", func(e *colly.HTMLElement) {
+		href := e.Attr("href")
+
+		parsedLink := e.Request.AbsoluteURL(href)
+
+		if parsedLink == "" {
 			return
 		}
-		if isInternalURL(host, lu) {
-			links = append(links, u.ResolveReference(lu).String())
+
+		visited, err := e.Request.HasVisited(parsedLink)
+
+		if err != nil {
+			fmt.Println(err)
+			return
 		}
 
+		if visited {
+			return
+		}
+
+		b.emit(Link{
+			source: e.Request.URL.String(),
+			target: parsedLink,
+		})
+
+		e.Request.Visit(href)
 	})
 
-	return unique(links), nil
-}
+	c.OnRequest(func(r *colly.Request) {
+		fmt.Println("Visiting", r.URL)
+	})
 
-// insures that the link is internal
-func isInternalURL(host string, lu *url.URL) bool {
+	c.Visit(uri)
 
-	if lu.IsAbs() {
-		return strings.EqualFold(host, lu.Host)
-	}
-	return len(lu.Host) == 0
-}
+	c.Wait()
 
-// insures that there is no repetition
-func unique(s []string) []string {
-	keys := make(map[string]bool)
-	list := []string{}
-	for _, entry := range s {
-		if _, value := keys[entry]; !value {
-			keys[entry] = true
-			list = append(list, entry)
-		}
-	}
-	return list
+	b.finish()
 }

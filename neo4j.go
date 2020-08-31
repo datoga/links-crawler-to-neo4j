@@ -8,8 +8,10 @@ func connectToNeo4j() (neo4j.Driver, neo4j.Session, error) {
 
 	configForNeo4j40 := func(conf *neo4j.Config) { conf.Encrypted = false }
 
-	driver, err := neo4j.NewDriver("bolt://localhost:7687", neo4j.BasicAuth(
-		"neo4j", "alice!in!wonderland", ""), configForNeo4j40)
+	//driver, err := neo4j.NewDriver("bolt://localhost:7687", neo4j.BasicAuth(
+	//	"neo4j", "alice!in!wonderland", ""), configForNeo4j40)
+
+	driver, err := neo4j.NewDriver("bolt://localhost:7687", neo4j.NoAuth(), configForNeo4j40)
 
 	if err != nil {
 		return nil, nil, err
@@ -24,7 +26,7 @@ func connectToNeo4j() (neo4j.Driver, neo4j.Session, error) {
 	return driver, session, nil
 }
 
-func createNode(session *neo4j.Session, l *link) (neo4j.Result, error) {
+func createNode(session *neo4j.Session, l *Link) (neo4j.Result, error) {
 	r, err := (*session).Run("CREATE (:WebLink{source: $source, target: $target}) ", map[string]interface{}{
 		"source": l.source,
 		"target": l.target,
